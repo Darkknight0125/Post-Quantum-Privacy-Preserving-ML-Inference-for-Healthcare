@@ -31,3 +31,11 @@ class LRSAdapter(Protocol):
     ) -> bool: ...
 
     def link(self, left: LRSSignature, right: LRSSignature) -> bool: ...
+
+
+class ResponseAssociationAdapter(Protocol):
+    """Optional construction-specific request/response association contract."""
+
+    def verify_response_association(
+        self, signature: LRSSignature, request_message: bytes, response_material: bytes
+    ) -> bool: ...
