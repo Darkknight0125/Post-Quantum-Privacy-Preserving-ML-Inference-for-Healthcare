@@ -17,10 +17,17 @@ class LRSAdapter(Protocol):
 
     def generate_keypair(self) -> tuple[bytes, bytes]: ...
 
-    def sign(self, secret_key: bytes, ring: tuple[bytes, ...], message: bytes,
-             epoch: int, scope: bytes) -> LRSSignature: ...
+    def sign(
+        self, secret_key: bytes, ring: tuple[bytes, ...], message: bytes, epoch: int, scope: bytes
+    ) -> LRSSignature: ...
 
-    def verify(self, ring: tuple[bytes, ...], message: bytes, signature: LRSSignature,
-               epoch: int, scope: bytes) -> bool: ...
+    def verify(
+        self,
+        ring: tuple[bytes, ...],
+        message: bytes,
+        signature: LRSSignature,
+        epoch: int,
+        scope: bytes,
+    ) -> bool: ...
 
     def link(self, left: LRSSignature, right: LRSSignature) -> bool: ...

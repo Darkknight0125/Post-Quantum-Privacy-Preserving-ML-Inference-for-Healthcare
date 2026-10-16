@@ -10,7 +10,7 @@ import math
 import re
 import uuid
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import TypeAlias
 
 from ppml_healthcare.errors import SchemaValidationError
@@ -33,7 +33,7 @@ def _require_bytes(name: str, value: bytes, *, maximum: int = _MAX_OPAQUE_FIELD_
 
 
 def _require_utc_datetime(name: str, value: datetime | None) -> None:
-    if value is not None and (value.tzinfo is None or value.utcoffset() != timezone.utc.utcoffset(value)):
+    if value is not None and (value.tzinfo is None or value.utcoffset() != UTC.utcoffset(value)):
         raise SchemaValidationError(f"{name} must be timezone-aware UTC")
 
 
@@ -81,7 +81,9 @@ class EncryptedPayload:
 
     def __post_init__(self) -> None:
         if not isinstance(self.nonce, bytes) or len(self.nonce) != 12:
-            raise SchemaValidationError("nonce must be exactly 12 bytes for the planned GCM profile")
+            raise SchemaValidationError(
+                "nonce must be exactly 12 bytes for the planned GCM profile"
+            )
         _require_bytes("ciphertext", self.ciphertext)
 
 
@@ -167,10 +169,13 @@ class MembershipEpoch:
         if isinstance(self.epoch, bool) or not isinstance(self.epoch, int) or self.epoch < 0:
             raise SchemaValidationError("epoch must be a non-negative integer")
         _require_utc_datetime("issued_at", self.issued_at)
-        if not isinstance(self.members, tuple) or any(not isinstance(key, bytes) for key in self.members):
+        if not isinstance(self.members, tuple) or any(
+            not isinstance(key, bytes) for key in self.members
+        ):
             raise SchemaValidationError("members must be a tuple of opaque public-key bytes")
         if len(self.members) != len(set(self.members)):
             raise SchemaValidationError("membership epoch cannot contain duplicate public keys")
-        if not isinstance(self.registry_digest, str) or not _HEX_256.fullmatch(self.registry_digest):
+        if not isinstance(self.registry_digest, str) or not _HEX_256.fullmatch(
+            self.registry_digest
+        ):
             raise SchemaValidationError("registry_digest must be a lowercase SHA-256 hex digest")
-

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import math
 import unittest
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from ppml_healthcare.errors import SchemaValidationError
 from ppml_healthcare.schemas import (
@@ -37,7 +37,7 @@ class SyntheticFeaturesTests(unittest.TestCase):
 
 class EnvelopeTests(unittest.TestCase):
     def test_valid_request_constructs_and_serializes_deterministically(self) -> None:
-        now = datetime(2026, 1, 1, tzinfo=timezone.utc)
+        now = datetime(2026, 1, 1, tzinfo=UTC)
         request = RequestEnvelope(
             protocol_version="1.0",
             epoch=3,
@@ -55,24 +55,43 @@ class EnvelopeTests(unittest.TestCase):
         self.assertNotIn(b"shared_secret", encoded)
 
     def test_rejects_bad_request_id_expiry_and_nonce(self) -> None:
-        now = datetime(2026, 1, 1, tzinfo=timezone.utc)
+        now = datetime(2026, 1, 1, tzinfo=UTC)
         with self.assertRaises(SchemaValidationError):
             EncryptedPayload(b"short", b"ciphertext")
         with self.assertRaises(SchemaValidationError):
             RequestEnvelope(
-                "1.0", 1, valid_model(), "not-a-uuid", now, None, b"kem",
-                EncryptedPayload(b"n" * 12, b"ciphertext"), b"proof",
+                "1.0",
+                1,
+                valid_model(),
+                "not-a-uuid",
+                now,
+                None,
+                b"kem",
+                EncryptedPayload(b"n" * 12, b"ciphertext"),
+                b"proof",
             )
         with self.assertRaises(SchemaValidationError):
             RequestEnvelope(
-                "1.0", 1, valid_model(), "12345678-1234-5678-1234-567812345678",
-                now, now, b"kem", EncryptedPayload(b"n" * 12, b"ciphertext"), b"proof",
+                "1.0",
+                1,
+                valid_model(),
+                "12345678-1234-5678-1234-567812345678",
+                now,
+                now,
+                b"kem",
+                EncryptedPayload(b"n" * 12, b"ciphertext"),
+                b"proof",
             )
 
     def test_response_schema_validates_critical_fields(self) -> None:
         response = ResponseEnvelope(
-            "1.0", "12345678-1234-5678-1234-567812345678", valid_model(), "prediction",
-            EncryptedPayload(b"r" * 12, b"encrypted"), b"association", b"signature",
+            "1.0",
+            "12345678-1234-5678-1234-567812345678",
+            valid_model(),
+            "prediction",
+            EncryptedPayload(b"r" * 12, b"encrypted"),
+            b"association",
+            b"signature",
         )
         self.assertIn(b"server_signature", canonical_bytes(response))
         with self.assertRaises(SchemaValidationError):

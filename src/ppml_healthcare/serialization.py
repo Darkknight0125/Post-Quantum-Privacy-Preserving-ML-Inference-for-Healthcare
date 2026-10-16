@@ -5,7 +5,7 @@ from __future__ import annotations
 import base64
 import json
 from dataclasses import fields, is_dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import Enum
 from typing import Any
 
@@ -18,7 +18,7 @@ def _normalize(value: Any) -> Any:
     if isinstance(value, bytes):
         return {"$bytes": base64.b64encode(value).decode("ascii")}
     if isinstance(value, datetime):
-        if value.tzinfo is None or value.utcoffset() != timezone.utc.utcoffset(value):
+        if value.tzinfo is None or value.utcoffset() != UTC.utcoffset(value):
             raise SchemaValidationError("canonical datetime values must be timezone-aware UTC")
         return value.isoformat(timespec="microseconds").replace("+00:00", "Z")
     if isinstance(value, Enum):
@@ -57,4 +57,3 @@ def canonical_bytes(value: Any) -> bytes:
     except (TypeError, ValueError) as exc:
         raise SchemaValidationError("value cannot be canonically serialized") from exc
     return encoded.encode("utf-8")
-
