@@ -15,3 +15,19 @@ class AdapterNotImplementedError(PPMLHealthcareError, NotImplementedError):
 
 class ProtocolRejectedError(PPMLHealthcareError):
     """Raised when a future protocol implementation rejects a message."""
+
+
+class RegistryError(PPMLHealthcareError):
+    """Base exception for membership and model registry operations."""
+
+
+class RegistryConflictError(RegistryError):
+    """Raised when an operation would silently replace registered state."""
+
+
+class UnknownMemberError(RegistryError):
+    """Raised when revoking or rotating an unregistered hospital key."""
+
+
+class ModelArtifactMismatchError(RegistryError):
+    """Raised when artifact bytes do not match a registered model digest."""
