@@ -1,19 +1,16 @@
-"""Explicit LRS adapter selection with secure mode failing closed."""
+"""Factory for the single MAYO scoped zero-knowledge LRS adapter."""
 
 from __future__ import annotations
 
-from ppml_healthcare.config import Settings
-from ppml_healthcare.crypto.lrs import LRSAdapter
-from ppml_healthcare.crypto.mock_lrs import InsecureTestMockLRSAdapter
+from ppml_healthcare.crypto.mayo_zk_lrs import MayoScopedZKLRSAdapter
 from ppml_healthcare.errors import AdapterNotImplementedError
 
 
-def create_lrs_adapter(settings: Settings) -> LRSAdapter:
-    """Create the configured adapter; no real LRS is currently approved."""
-    if settings.crypto_mode == "INSECURE_TEST_MOCK":
-        if settings.environment != "test":
-            raise ValueError("insecure mock adapter requires test environment")
-        return InsecureTestMockLRSAdapter()
-    raise AdapterNotImplementedError(
-        "no reviewed LRS implementation is available; secure mode cannot create an adapter"
-    )
+def create_lrs_adapter() -> MayoScopedZKLRSAdapter:
+    """Create the real adapter, failing closed when its native backend is absent."""
+    try:
+        return MayoScopedZKLRSAdapter()
+    except FileNotFoundError as exc:
+        raise AdapterNotImplementedError(
+            "MAYO LRS backend is unavailable: build native/msz_lrs before secure operation"
+        ) from exc

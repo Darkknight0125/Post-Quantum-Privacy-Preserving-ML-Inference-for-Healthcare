@@ -113,6 +113,7 @@ class RequestEnvelope:
     encrypted_features: EncryptedPayload
     lrs_proof: bytes
     response_association: bytes | None = None
+    link_tag: bytes | None = None
 
     def __post_init__(self) -> None:
         _require_nonempty_string("protocol_version", self.protocol_version, 32)
@@ -133,6 +134,10 @@ class RequestEnvelope:
         _require_bytes("lrs_proof", self.lrs_proof)
         if self.response_association is not None:
             _require_bytes("response_association", self.response_association)
+        if self.link_tag is not None:
+            _require_bytes("link_tag", self.link_tag)
+            if len(self.link_tag) != 32:
+                raise SchemaValidationError("link_tag must be 32 bytes")
 
 
 @dataclass(frozen=True, slots=True)

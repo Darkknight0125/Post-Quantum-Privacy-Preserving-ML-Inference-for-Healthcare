@@ -1,0 +1,10 @@
+[package]
+name = "msz-lrs-guest"
+version = "0.1.0"
+edition = "2024"
+[workspace]
+[dependencies]
+msz-lrs-core = { path = "../../core" }
+pq-mayo = { version = "=0.6.0", default-features = false }
+risc0-zkvm = { version = "=3.0.6", default-features = false, features = ["std"] }
+signature = "3"

@@ -8,7 +8,7 @@ from typing import Protocol
 
 from ppml_healthcare.config import Settings
 from ppml_healthcare.crypto.lrs import LRSAdapter, LRSSignature
-from ppml_healthcare.errors import AdapterNotImplementedError, ProtocolRejectedError
+from ppml_healthcare.errors import ProtocolRejectedError
 from ppml_healthcare.membership.epochs import EpochPolicy, LatestEpochOnlyPolicy
 from ppml_healthcare.membership.registry import MembershipRegistry
 from ppml_healthcare.models.registry import ModelRegistry
@@ -52,12 +52,6 @@ class OrderedRequestValidator:
         observer: ValidationObserver | None = None,
         now: Callable[[], datetime] | None = None,
     ) -> None:
-        if getattr(lrs, "insecure_test_only", False) and (
-            settings.environment != "test" or settings.crypto_mode != "INSECURE_TEST_MOCK"
-        ):
-            raise AdapterNotImplementedError(
-                "insecure mock LRS validation requires explicit test environment and mode"
-            )
         if (
             isinstance(request_limit, bool)
             or not isinstance(request_limit, int)
@@ -124,11 +118,24 @@ class OrderedRequestValidator:
         signature = LRSSignature(
             proof=request.lrs_proof,
             response_association=request.response_association,
+            link_tag=request.link_tag,
+            epoch=request.epoch,
+            ring_digest=(
+                self._lrs.ring_digest(accepted_epoch.members, request.epoch)
+                if callable(getattr(self._lrs, "ring_digest", None))
+                else None
+            ),
+            scope=REQUEST_AUTH_SCOPE,
         )
         try:
             authenticated = self._lrs.verify(
                 accepted_epoch.members,
-                request_authentication_message(request),
+                request_authentication_message(
+                    request,
+                    ring_digest=(
+                        signature.ring_digest if signature.ring_digest is not None else None
+                    ),
+                ),
                 signature,
                 request.epoch,
                 REQUEST_AUTH_SCOPE,
@@ -156,6 +163,8 @@ class OrderedRequestValidator:
             raise ProtocolRejectedError("unsupported protocol version")
         if not request.lrs_proof:
             raise ProtocolRejectedError("request authentication proof is missing")
+        if not isinstance(request.link_tag, bytes) or len(request.link_tag) != 32:
+            raise ProtocolRejectedError("anonymous request link tag is missing or malformed")
         if request.response_association is None or not request.response_association:
             raise ProtocolRejectedError("request correlation material is missing")
         if len(request.kem_ciphertext) == 0:

@@ -1,4 +1,4 @@
-"""Opaque LRS interface only; no MAYO or mock signing behavior is provided."""
+"""Opaque contract implemented by the MAYO scoped zero-knowledge LRS."""
 
 from __future__ import annotations
 
@@ -10,10 +10,14 @@ from typing import Protocol
 class LRSSignature:
     proof: bytes
     response_association: bytes | None = None
+    link_tag: bytes | None = None
+    epoch: int | None = None
+    ring_digest: bytes | None = None
+    scope: bytes | None = None
 
 
 class LRSAdapter(Protocol):
-    """Contract to implement only after an LRS construction is selected."""
+    """LRS contract; membership rows and secret credentials are opaque bytes."""
 
     def generate_keypair(self) -> tuple[bytes, bytes]: ...
 

@@ -8,7 +8,6 @@ from ppml_healthcare.crypto.aead import AES256GCMAdapter
 from ppml_healthcare.crypto.kdf import HKDFSHA256Adapter
 from ppml_healthcare.crypto.kem import CryptographyMLKEMAdapter
 from ppml_healthcare.crypto.lrs import LRSSignature
-from ppml_healthcare.crypto.mock_lrs import InsecureTestMockLRSAdapter
 from ppml_healthcare.errors import SchemaValidationError
 from ppml_healthcare.protocol.client import (
     REQUEST_AUTH_SCOPE,
@@ -24,11 +23,12 @@ from ppml_healthcare.schemas import (
     SyntheticFeatures,
 )
 from ppml_healthcare.serialization import canonical_bytes
+from tests.support.test_lrs_support import LRSProtocolStub
 
 
 @pytest.fixture
 def request_context():
-    lrs = InsecureTestMockLRSAdapter()
+    lrs = LRSProtocolStub()
     hospital_public, hospital_secret = lrs.generate_keypair()
     kem = CryptographyMLKEMAdapter()
     server_keys = kem.generate_keypair()
@@ -48,7 +48,7 @@ def request_context():
         server_kem_public_key=server_keys.public_key,
         lrs=lrs,
         pending_store=pending,
-        settings=Settings(environment="test", crypto_mode="INSECURE_TEST_MOCK"),
+        settings=Settings(environment="test"),
         kem=kem,
         kdf=HKDFSHA256Adapter(salt=b"step-5-test-salt"),
         aead=AES256GCMAdapter(),
@@ -188,22 +188,6 @@ def test_builder_rejects_wrong_features_and_empty_epoch(request_context) -> None
             server_kem_public_key=server_keys.public_key,
             lrs=lrs,
             pending_store=InMemoryPendingRequestStore(),
-            settings=Settings(environment="test", crypto_mode="INSECURE_TEST_MOCK"),
-            kem=kem,
-        )
-
-
-def test_builder_rejects_insecure_mock_without_test_mode(request_context) -> None:
-    _, _, lrs, kem, server_keys, epoch, model = request_context
-    _, hospital_secret = lrs.generate_keypair()
-    with pytest.raises(SchemaValidationError, match="requires test environment"):
-        HospitalRequestBuilder(
-            protocol_version="1.0",
-            membership_epoch=epoch,
-            hospital_secret_key=hospital_secret,
-            model=model,
-            server_kem_public_key=server_keys.public_key,
-            lrs=lrs,
-            pending_store=InMemoryPendingRequestStore(),
+            settings=Settings(environment="test"),
             kem=kem,
         )

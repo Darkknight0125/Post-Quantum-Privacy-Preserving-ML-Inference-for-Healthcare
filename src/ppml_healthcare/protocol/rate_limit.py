@@ -8,7 +8,6 @@ from collections import deque
 from dataclasses import dataclass
 from typing import Protocol
 
-from ppml_healthcare.config import Settings
 from ppml_healthcare.crypto.lrs import LRSAdapter, LRSSignature
 
 
@@ -26,9 +25,7 @@ class _Entry:
 class InMemoryLinkabilityRateLimiter:
     """Process-local sliding-window limit based on pairwise LRS link checks.
 
-    This can exercise the workflow with the identity-revealing test mock. It
-    does not establish anonymous rate limiting or substitute for a reviewed
-    LRS. Every accepted proof is retained for at most ``window_seconds``.
+    Every accepted proof is retained for at most ``window_seconds``.
     """
 
     def __init__(
@@ -38,7 +35,6 @@ class InMemoryLinkabilityRateLimiter:
         window_seconds: float = 60.0,
         max_entries: int = 100_000,
         clock=time.monotonic,
-        settings: Settings | None = None,
     ) -> None:
         if not callable(getattr(lrs, "link", None)):
             raise ValueError("LRS adapter must provide linkability checks")
@@ -48,12 +44,6 @@ class InMemoryLinkabilityRateLimiter:
             raise ValueError("window_seconds must be positive")
         if isinstance(max_entries, bool) or not isinstance(max_entries, int) or max_entries <= 0:
             raise ValueError("max_entries must be a positive integer")
-        selected_settings = settings or Settings()
-        if getattr(lrs, "insecure_test_only", False) and (
-            selected_settings.environment != "test"
-            or selected_settings.crypto_mode != "INSECURE_TEST_MOCK"
-        ):
-            raise ValueError("insecure mock rate limiting requires explicit test mode")
         self._lrs = lrs
         self._window = float(window_seconds)
         self._max_entries = max_entries

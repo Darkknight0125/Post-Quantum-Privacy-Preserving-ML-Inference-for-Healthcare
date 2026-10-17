@@ -83,6 +83,35 @@ class EnvelopeTests(unittest.TestCase):
                 b"proof",
             )
 
+    def test_link_tag_is_optional_for_mock_but_fixed_length_when_present(self) -> None:
+        now = datetime(2026, 1, 1, tzinfo=UTC)
+        request = RequestEnvelope(
+            protocol_version="1.0",
+            epoch=3,
+            model=valid_model(),
+            request_id="12345678-1234-5678-1234-567812345678",
+            created_at=now,
+            expires_at=None,
+            kem_ciphertext=b"kem-ciphertext",
+            encrypted_features=EncryptedPayload(b"n" * 12, b"ciphertext"),
+            lrs_proof=b"opaque-proof",
+            link_tag=b"T" * 32,
+        )
+        self.assertEqual(request.link_tag, b"T" * 32)
+        with self.assertRaises(SchemaValidationError):
+            RequestEnvelope(
+                protocol_version="1.0",
+                epoch=3,
+                model=valid_model(),
+                request_id="12345678-1234-5678-1234-567812345678",
+                created_at=now,
+                expires_at=None,
+                kem_ciphertext=b"kem-ciphertext",
+                encrypted_features=EncryptedPayload(b"n" * 12, b"ciphertext"),
+                lrs_proof=b"opaque-proof",
+                link_tag=b"short",
+            )
+
     def test_response_schema_validates_critical_fields(self) -> None:
         response = ResponseEnvelope(
             "1.0",

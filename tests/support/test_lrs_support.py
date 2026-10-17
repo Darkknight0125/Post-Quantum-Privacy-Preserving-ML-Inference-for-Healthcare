@@ -1,8 +1,4 @@
-"""Deliberately insecure LRS-shaped adapter for local workflow tests only.
-
-This is not an LRS construction: proofs disclose the signer key and use public
-hashes, so anyone can forge them. Never use this module for authorization.
-"""
+"""Test-only protocol double for non-cryptographic workflow tests."""
 
 from __future__ import annotations
 
@@ -11,7 +7,7 @@ import secrets
 
 from ppml_healthcare.crypto.lrs import LRSSignature
 
-_MAGIC = b"INSECURE_TEST_MOCK_LRS_V1\0"
+_MAGIC = b"TEST_ONLY_LRS_STUB_V1\0"
 _PROOF_SIZE = len(_MAGIC) + 8 + 32 + 32 + 32 + 32
 
 
@@ -21,16 +17,14 @@ def _digest(data: bytes) -> bytes:
 
 def _ring_digest(ring: tuple[bytes, ...]) -> bytes:
     if not ring or any(not isinstance(key, bytes) or len(key) != 32 for key in ring):
-        raise ValueError("ring must contain 32-byte mock public keys")
+        raise ValueError("ring must contain 32-byte test public keys")
     if len(set(ring)) != len(ring):
         raise ValueError("ring must not contain duplicate keys")
     return _digest(b"MOCK-RING\0" + b"".join(sorted(ring)))
 
 
-class InsecureTestMockLRSAdapter:
-    """Forgeable demonstration adapter; leaks the signer identity in each proof."""
-
-    insecure_test_only = True
+class LRSProtocolStub:
+    """Test-only protocol double; provides no security properties."""
 
     def generate_keypair(self) -> tuple[bytes, bytes]:
         secret_key = secrets.token_bytes(32)
@@ -40,7 +34,7 @@ class InsecureTestMockLRSAdapter:
         self, secret_key: bytes, ring: tuple[bytes, ...], message: bytes, epoch: int, scope: bytes
     ) -> LRSSignature:
         if not isinstance(secret_key, bytes) or len(secret_key) != 32:
-            raise ValueError("mock secret key must be 32 bytes")
+            raise ValueError("test secret key must be 32 bytes")
         if not isinstance(message, bytes) or not isinstance(scope, bytes):
             raise ValueError("message and scope must be bytes")
         if isinstance(epoch, bool) or not isinstance(epoch, int) or not 0 <= epoch < 2**64:
@@ -57,7 +51,12 @@ class InsecureTestMockLRSAdapter:
             + _digest(scope)
             + _digest(message)
         )
-        return LRSSignature(proof=proof)
+        link_tag = _digest(
+            b"TEST-LINK\\0" + signer + ring_hash + epoch.to_bytes(8, "big") + _digest(scope)
+        )
+        return LRSSignature(
+            proof=proof, link_tag=link_tag, epoch=epoch, ring_digest=ring_hash, scope=scope
+        )
 
     def verify(
         self,
@@ -108,9 +107,10 @@ class InsecureTestMockLRSAdapter:
             or len(proof) != _PROOF_SIZE
             or not proof.startswith(_MAGIC)
         ):
-            raise ValueError("malformed mock proof")
+            raise ValueError("malformed test proof")
         offset = len(_MAGIC)
         epoch = int.from_bytes(proof[offset : offset + 8], "big")
         offset += 8
         chunks = tuple(proof[offset + i : offset + i + 32] for i in range(0, 128, 32))
         return (epoch, *chunks)  # type: ignore[return-value]
+

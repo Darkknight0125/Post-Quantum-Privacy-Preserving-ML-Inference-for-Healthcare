@@ -5,7 +5,7 @@ from __future__ import annotations
 import secrets
 import threading
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from typing import Protocol
 
@@ -20,6 +20,7 @@ from ppml_healthcare.schemas import (
     ModelDescriptor,
     RequestEnvelope,
     ResponseEnvelope,
+    ScalarFeature,
     SyntheticFeatures,
 )
 from ppml_healthcare.serialization import canonical_bytes
@@ -31,7 +32,7 @@ _DEFAULT_REQUEST_TTL = timedelta(minutes=5)
 class HospitalClient(Protocol):
     def build_request(self, features: SyntheticFeatures) -> RequestEnvelope: ...
 
-    def accept_response(self, response: ResponseEnvelope) -> object: ...
+    def accept_response(self, response: ResponseEnvelope) -> ScalarFeature: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -39,8 +40,10 @@ class PendingRequest:
     """Ephemeral client-only keys and correlation data for a request."""
 
     request_id: str
-    aes_key: bytes
-    response_association: bytes
+    protocol_version: str
+    model: ModelDescriptor
+    aes_key: bytes = field(repr=False)
+    response_association: bytes = field(repr=False)
 
 
 class PendingRequestStore(Protocol):
@@ -90,8 +93,66 @@ def request_associated_data(
     )
 
 
-def request_authentication_message(request: RequestEnvelope) -> bytes:
-    """Canonical signed fields; deliberately excludes only the proof itself."""
+def request_key_derivation_context(*, protocol_version: str, request_id: str) -> bytes:
+    """Canonical HKDF context shared by the hospital and server sides."""
+    return canonical_bytes(
+        {
+            "protocol_version": protocol_version,
+            "purpose": "request-aes-256-gcm",
+            "request_id": request_id,
+        }
+    )
+
+
+def request_authentication_message(
+    request: RequestEnvelope, *, ring_digest: bytes | None = None
+) -> bytes:
+    """Encode the request core, excluding only LRS proof and link tag.
+
+    MAYO LRS uses a strict binary format and binds the exact current ring
+    digest.
+    """
+    if ring_digest is not None:
+        if not isinstance(ring_digest, bytes) or len(ring_digest) != 32:
+            raise SchemaValidationError("ring_digest must be 32 bytes")
+
+        def lp(raw: bytes) -> bytes:
+            if len(raw) >= 2**32:
+                raise SchemaValidationError("request field exceeds U32 length")
+            return len(raw).to_bytes(4, "big") + raw
+
+        def unix_seconds(value: datetime) -> bytes:
+            timestamp = int(value.timestamp())
+            if timestamp < 0 or timestamp >= 2**64:
+                raise SchemaValidationError("request timestamp is outside U64 range")
+            return timestamp.to_bytes(8, "big")
+
+        protocol_version = request.protocol_version.encode("utf-8", errors="strict")
+        request_id = request.request_id.encode("utf-8", errors="strict")
+        model_id = request.model.model_id.encode("utf-8", errors="strict")
+        model_version = request.model.model_version.encode("utf-8", errors="strict")
+        payload = bytearray(b"MSZ-LRS/request-core-encoding/v1")
+        payload.extend(lp(protocol_version))
+        payload.extend(request.epoch.to_bytes(8, "big"))
+        payload.extend(ring_digest)
+        payload.extend(lp(request_id))
+        payload.extend(unix_seconds(request.created_at))
+        if request.expires_at is None:
+            payload.extend(b"\x00")
+        else:
+            payload.extend(b"\x01")
+            payload.extend(unix_seconds(request.expires_at))
+        payload.extend(lp(model_id))
+        payload.extend(lp(model_version))
+        payload.extend(bytes.fromhex(request.model.model_hash))
+        payload.extend(lp(request.kem_ciphertext))
+        payload.extend(request.encrypted_features.nonce)
+        payload.extend(lp(request.encrypted_features.ciphertext))
+        # This project-specific extension authenticates Step 8 response
+        # correlation so it cannot be replaced after anonymous authorization.
+        payload.extend(lp(request.response_association or b""))
+        return bytes(payload)
+
     return canonical_bytes(
         {
             "protocol_version": request.protocol_version,
@@ -142,14 +203,8 @@ class HospitalRequestBuilder:
             raise SchemaValidationError("request_ttl must be positive or None")
         if not callable(getattr(lrs, "sign", None)):
             raise SchemaValidationError("lrs adapter does not implement signing")
-        selected_settings = settings or Settings()
-        if getattr(lrs, "insecure_test_only", False) and (
-            selected_settings.environment != "test"
-            or selected_settings.crypto_mode != "INSECURE_TEST_MOCK"
-        ):
-            raise SchemaValidationError(
-                "insecure mock LRS requires test environment and INSECURE_TEST_MOCK mode"
-            )
+        if settings is not None and not isinstance(settings, Settings):
+            raise SchemaValidationError("settings must be a Settings instance")
         self._lrs = lrs
         self._protocol_version = protocol_version
         self._epoch = membership_epoch
@@ -161,8 +216,7 @@ class HospitalRequestBuilder:
         self._kdf = kdf or HKDFSHA256Adapter()
         self._aead = aead or AES256GCMAdapter()
 
-        # Validate the key/ring relationship without exposing a signer identity
-        # through this API. Signing performs the definitive check for the mock.
+        # Signing performs the definitive credential and membership check.
         if not self._epoch.members:
             raise SchemaValidationError("membership epoch must contain at least one member")
         if request_ttl is not None:
@@ -182,12 +236,9 @@ class HospitalRequestBuilder:
             else created_at + timedelta(seconds=self._request_ttl_seconds)
         )
         encapsulation = self._kem.encapsulate(self._server_kem_public_key)
-        kdf_context = canonical_bytes(
-            {
-                "protocol_version": self._protocol_version,
-                "purpose": "request-aes-256-gcm",
-                "request_id": request_id,
-            }
+        kdf_context = request_key_derivation_context(
+            protocol_version=self._protocol_version,
+            request_id=request_id,
         )
         aes_key = self._kdf.derive_key(encapsulation.shared_secret, kdf_context, length=32)
         aad = request_associated_data(
@@ -198,8 +249,8 @@ class HospitalRequestBuilder:
         )
         encrypted = self._aead.encrypt(aes_key, canonical_bytes(features), aad)
 
-        # This random token is only workflow correlation for the insecure mock;
-        # it is not an LRS response-association proof.
+        # This token provides workflow correlation, not a separate zero-knowledge
+        # response-association proof.
         response_association = secrets.token_bytes(32)
         unsigned = RequestEnvelope(
             protocol_version=self._protocol_version,
@@ -216,7 +267,14 @@ class HospitalRequestBuilder:
         proof = self._lrs.sign(
             self._hospital_secret_key,
             self._epoch.members,
-            request_authentication_message(unsigned),
+            request_authentication_message(
+                unsigned,
+                ring_digest=(
+                    self._lrs.ring_digest(self._epoch.members, self._epoch.epoch)
+                    if callable(getattr(self._lrs, "ring_digest", None))
+                    else None
+                ),
+            ),
             self._epoch.epoch,
             REQUEST_AUTH_SCOPE,
         )
@@ -231,10 +289,13 @@ class HospitalRequestBuilder:
             encrypted_features=unsigned.encrypted_features,
             lrs_proof=proof.proof,
             response_association=unsigned.response_association,
+            link_tag=proof.link_tag,
         )
         self._pending_store.put(
             PendingRequest(
                 request_id=request_id,
+                protocol_version=self._protocol_version,
+                model=self._model,
                 aes_key=aes_key,
                 response_association=response_association,
             )

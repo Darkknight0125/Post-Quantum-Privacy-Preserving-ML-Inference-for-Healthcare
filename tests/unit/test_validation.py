@@ -9,8 +9,7 @@ import pytest
 
 from ppml_healthcare.config import Settings
 from ppml_healthcare.crypto.kem import CryptographyMLKEMAdapter
-from ppml_healthcare.crypto.mock_lrs import InsecureTestMockLRSAdapter
-from ppml_healthcare.errors import AdapterNotImplementedError, ProtocolRejectedError
+from ppml_healthcare.errors import ProtocolRejectedError
 from ppml_healthcare.membership.registry import InMemoryMembershipRegistry
 from ppml_healthcare.models.registry import InMemoryModelRegistry
 from ppml_healthcare.protocol.client import (
@@ -22,6 +21,7 @@ from ppml_healthcare.protocol.rate_limit import InMemoryLinkabilityRateLimiter
 from ppml_healthcare.protocol.replay import InMemoryReplayStore
 from ppml_healthcare.protocol.validation import OrderedRequestValidator
 from ppml_healthcare.schemas import ModelDescriptor, SyntheticFeatures
+from tests.support.test_lrs_support import LRSProtocolStub
 
 
 class _Observer:
@@ -34,8 +34,8 @@ class _Observer:
 
 @pytest.fixture
 def context(tmp_path):
-    settings = Settings(environment="test", crypto_mode="INSECURE_TEST_MOCK")
-    lrs = InsecureTestMockLRSAdapter()
+    settings = Settings(environment="test")
+    lrs = LRSProtocolStub()
     hospital_public, hospital_secret = lrs.generate_keypair()
     membership = InMemoryMembershipRegistry((hospital_public,))
     epoch = membership.current_epoch()
@@ -82,10 +82,7 @@ def _validator(context, *, limit: int = 60, **kwargs):
         replay_store=kwargs.pop("replay_store", InMemoryReplayStore()),
         rate_limiter=kwargs.pop(
             "rate_limiter",
-            InMemoryLinkabilityRateLimiter(
-                lrs,
-                settings=context["settings"],
-            ),
+            InMemoryLinkabilityRateLimiter(lrs),
         ),
         request_limit=limit,
         **kwargs,
@@ -131,11 +128,10 @@ def test_format_epoch_model_and_freshness_fail_before_replay_or_lrs(context) -> 
     assert [stage for stage, _ in observer.events] == ["basic_format"]
 
 
-def test_request_size_limit_and_test_mock_guard(context) -> None:
+def test_request_size_limit(context) -> None:
     request = _request(context)
     small_settings = Settings(
         environment="test",
-        crypto_mode="INSECURE_TEST_MOCK",
         protocol_version="1.0",
         max_request_bytes=64,
     )
@@ -146,20 +142,8 @@ def test_request_size_limit_and_test_mock_guard(context) -> None:
             models=context["models"],
             lrs=context["lrs"],
             replay_store=InMemoryReplayStore(),
-            rate_limiter=InMemoryLinkabilityRateLimiter(context["lrs"], settings=small_settings),
+            rate_limiter=InMemoryLinkabilityRateLimiter(context["lrs"]),
         ).validate_before_decryption(request)
-
-    with pytest.raises(AdapterNotImplementedError, match="explicit test environment"):
-        OrderedRequestValidator(
-            settings=Settings(),
-            membership=context["membership"],
-            models=context["models"],
-            lrs=context["lrs"],
-            replay_store=InMemoryReplayStore(),
-            rate_limiter=InMemoryLinkabilityRateLimiter(
-                context["lrs"], settings=context["settings"]
-            ),
-        )
 
 
 def test_unregistered_model_is_rejected_before_request_id_claim(context) -> None:
@@ -221,10 +205,7 @@ def test_duplicate_request_is_rejected_and_claim_is_atomic(context) -> None:
 def test_linkability_rate_limit_counts_same_signer_and_resets_after_window(context) -> None:
     now = [100.0]
     limiter = InMemoryLinkabilityRateLimiter(
-        context["lrs"],
-        window_seconds=10,
-        clock=lambda: now[0],
-        settings=context["settings"],
+        context["lrs"], window_seconds=10, clock=lambda: now[0]
     )
     first = _request(context)
     second = _request(context)

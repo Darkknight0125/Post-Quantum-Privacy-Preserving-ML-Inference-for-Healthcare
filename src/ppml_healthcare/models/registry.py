@@ -22,6 +22,8 @@ class ModelRegistry(Protocol):
 
     def register_model(self, descriptor: ModelDescriptor, artifact_path: str) -> None: ...
 
+    def verify_artifact(self, model_id: str, model_version: str) -> bool: ...
+
 
 @dataclass(frozen=True, slots=True)
 class _RegisteredModel:
