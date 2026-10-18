@@ -1,0 +1,38 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ppml-healthcare"
+version = "0.1.0"
+description = "Research prototype interfaces for privacy-preserving healthcare ML inference"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "Proprietary research prototype" }
+dependencies = ["cryptography==50.0.2"]
+
+[project.scripts]
+ppml-healthcare-demo = "ppml_healthcare.app:main"
+
+[project.optional-dependencies]
+dev = ["pytest>=8,<10", "ruff>=0.12,<1"]
+
+[tool.setuptools]
+package-dir = { "" = "src" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
+pythonpath = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
