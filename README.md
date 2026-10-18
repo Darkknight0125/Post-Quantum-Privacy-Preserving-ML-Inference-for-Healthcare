@@ -84,12 +84,12 @@ independent cryptographic review. The implementation uses the Rust `pq-mayo`
 crate at 0.6.0 and RISC Zero 3.0.6, not the official MAYO-C implementation.
 Official MAYO KAT comparison and a formal security analysis remain outstanding.
 
-See [MAYO_LRS_IMPLEMENTATION_EXPLAINED.md](MAYO_LRS_IMPLEMENTATION_EXPLAINED.md)
-for the construction equations, proof relation, encodings, and assumptions.
-The earlier [implementation guide](MAYO_Scoped_ZK_LRS_Complete_Implementation_Guide.md)
-and [design proposal](MAYO_LRS_DESIGN_PROPOSAL.md) provide additional
-research context; the implementation explanation describes the code as it
-currently exists.
+The LRS equations and encodings are implemented in
+[`native/msz_lrs/core/src/lib.rs`](native/msz_lrs/core/src/lib.rs); the guest
+checks the proof relation in
+[`native/msz_lrs/methods/guest/src/main.rs`](native/msz_lrs/methods/guest/src/main.rs).
+The Python boundary is in
+[`src/ppml_healthcare/crypto/mayo_zk_lrs.py`](src/ppml_healthcare/crypto/mayo_zk_lrs.py).
 
 ## Implemented components
 
@@ -108,15 +108,13 @@ currently exists.
   behavior. Protocol flow tests use a test-only LRS stub at the test boundary;
   it is not available through runtime configuration or the adapter factory.
 
-The implementation stages and original scope are in
-[implementation_plan.md](implementation_plan.md). Security and privacy
-assumptions are summarized in [SECURITY_NOTES.md](SECURITY_NOTES.md).
-
 ## Requirements and how they are fulfilled
 
-The table maps the functional requirements in the implementation plan to the
-current code. “Partial” means there is prototype behavior, but the operational
-or security requirement is not complete.
+The table summarizes the project's functional requirements and maps them to
+the current implementation.
+
+“Partial” means there is prototype behavior, but the operational or security
+requirement is not complete.
 
 | ID | Requirement | Implementation and status |
 | --- | --- | --- |
@@ -135,7 +133,7 @@ or security requirement is not complete.
 | FR-13 | Verify response association | A request-bound correlation token is checked against local pending state and authenticated by the server signature. This is not a separate zero-knowledge response-association proof. **Partial.** |
 | FR-14 | Add, revoke, and rotate membership through epochs | Registry operations publish a new immutable epoch. **Implemented in the in-memory prototype.** |
 | FR-15 | Privacy-safe structured audit logs | The project has no structured audit logging subsystem. **Not implemented.** |
-| FR-16 | Make dependencies and experimental cryptography explicit | Dependencies are pinned in project manifests, and the README, LRS guide, and startup output identify the research backend and limitations. **Implemented for the current prototype.** |
+| FR-16 | Make dependencies and experimental cryptography explicit | Dependencies are pinned in project manifests, and the README and startup output identify the research backend and limitations. **Implemented for the current prototype.** |
 
 The main non-functional requirements are handled as follows:
 
